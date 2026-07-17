@@ -12,10 +12,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateOffsetAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,13 +31,19 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -175,7 +186,7 @@ class MainActivity : ComponentActivity() {
                 fun triggerSave() { AppLaunchTracker.saveAllData(context, schemes.toList(), activeSchemeId) }
                 val activeScheme = schemes.find { it.id == activeSchemeId }
 
-                // 液态玻璃背景：渐变效果
+                // 背景渐变
                 val backgroundBrush = Brush.linearGradient(
                     colors = listOf(Color(0xFFE3F2FD), Color(0xFFF3E5F5))
                 )
@@ -214,20 +225,14 @@ fun GlassBox(
     cornerRadius: Float = 20f,
     content: @Composable BoxScope.() -> Unit
 ) {
-    Box(
-        modifier = modifier
-            .vibrancy(saturation = 1.6f, contrast = 1.1f)
-            .liquidGlassEffect(
-                amount = 25f,
-                height = 50f,
-                chromaticAberration = 0.6f,
-                cornerRadii = floatArrayOf(cornerRadius, cornerRadius, cornerRadius, cornerRadius)
-            )
-            .background(Color.White.copy(alpha = 0.25f), RoundedCornerShape(cornerRadius.dp))
-            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)), RoundedCornerShape(cornerRadius.dp)),
-        contentAlignment = Alignment.Center,
-        content = content
-    )
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(cornerRadius.dp),
+        color = Color.White.copy(alpha = 0.7f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f))
+    ) {
+        Box(contentAlignment = Alignment.Center, content = content)
+    }
 }
 
 @Composable
@@ -248,7 +253,6 @@ fun HomeScreen(isDriverInstalled: Boolean, hasRoot: Boolean, activeScheme: Schem
         Text(text = "BEI Ultra", style = MaterialTheme.typography.headlineLarge, color = Color(0xFF1A237E))
 
         Row(modifier = Modifier.fillMaxWidth().offset(y = screenHeight * 0.08f)) {
-            // 状态卡片使用液态玻璃效果
             GlassBox(modifier = Modifier.size(screenWidth / 2 - 10.dp, screenHeight * 0.25f)) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(if (hasRoot) "工作中<ROOT>" else "工作中<NORMAL>", color = if (hasRoot) Color(0xFF1B5E20) else Color(0xFF37474F), fontSize = 18.sp)
@@ -358,12 +362,10 @@ fun HomeScreen(isDriverInstalled: Boolean, hasRoot: Boolean, activeScheme: Schem
             }
         }
 
-        // 玻璃质感日志区
+        // 日志区
         Box(modifier = Modifier.offset(y = screenHeight * 0.46f).fillMaxWidth().height(screenHeight * 0.35f)
-            .vibrancy()
-            .liquidGlassEffect(amount = 15f, height = 30f, chromaticAberration = 0.3f)
-            .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
-            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)), RoundedCornerShape(20.dp))
+            .background(Color.White.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)), RoundedCornerShape(20.dp))
             .padding(12.dp)) {
             LazyColumn(modifier = Modifier.fillMaxSize()) { item { Text(text = logText, color = Color(0xFF37474F), fontSize = 14.sp) } }
         }
@@ -401,9 +403,7 @@ fun SchemeScreen(schemes: List<Scheme>, activeSchemeId: String?, onActivate: (St
                 items(schemes) { scheme ->
                     val isActive = scheme.id == activeSchemeId
                     Box(modifier = Modifier.fillMaxWidth()
-                        .vibrancy(saturation = if(isActive) 1.8f else 1.2f)
-                        .liquidGlassEffect(amount = if(isActive) 25f else 10f)
-                        .background(if (isActive) Color.White.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                        .background(if (isActive) Color(0xFFE3F2FD) else Color.White.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
                         .border(if (isActive) BorderStroke(2.dp, Color(0xFF2196F3)) else BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)), RoundedCornerShape(16.dp))
                     ) {
                         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -484,9 +484,7 @@ fun AboutScreen() {
     Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(modifier = Modifier.height(40.dp))
         Box(modifier = Modifier.size(120.dp)
-            .vibrancy()
-            .liquidGlassEffect()
-            .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(30.dp))
+            .background(Color.White.copy(alpha = 0.8f), RoundedCornerShape(30.dp))
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)), RoundedCornerShape(30.dp))
             .clip(RoundedCornerShape(30.dp))) { 
             AndroidView(factory = { c -> ImageView(c).apply { setImageDrawable(c.packageManager.getApplicationIcon(c.packageName)) } }, modifier = Modifier.fillMaxSize()) 
@@ -495,9 +493,7 @@ fun AboutScreen() {
         Text(text = "BEI Ultra", style = MaterialTheme.typography.headlineMedium, color = Color(0xFF1A237E)); Text(text = "版本 $v", color = Color.Gray)
         Spacer(modifier = Modifier.height(40.dp))
         Box(modifier = Modifier.fillMaxWidth()
-            .vibrancy()
-            .liquidGlassEffect()
-            .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+            .background(Color.White.copy(alpha = 0.8f), RoundedCornerShape(20.dp))
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)), RoundedCornerShape(20.dp))
             .padding(20.dp)) {
             Text(text = "BEI Ultra 由 BEI Team 开发。\n专为极客设计的自动化工具。\n反馈地址: shandian145108@qq.com", fontSize = 14.sp, color = Color.DarkGray) 
@@ -507,8 +503,78 @@ fun AboutScreen() {
 
 @Composable
 fun BottomNavigationBar(current: String, onSel: (String) -> Unit) {
-    Surface(tonalElevation = 8.dp, color = Color.White.copy(alpha = 0.8f)) {
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 32.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+    var touchOffset by remember { mutableStateOf(Offset.Zero) }
+    var isPressed by remember { mutableStateOf(false) }
+
+    // 1. 更加柔和的追踪动画（Spring 阻尼感）
+    val animatedOffset by animateOffsetAsState(
+        targetValue = touchOffset,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy, // 增加一点弹性
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "bubble_offset"
+    )
+
+    // 2. 气泡强度的平滑过渡
+    val animatedAmount by animateFloatAsState(
+        targetValue = if (isPressed) 25f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "bubble_amount"
+    )
+
+    // 3. 气泡尺寸定义（推荐 110x110 圆形或略扁的椭圆）
+    val bubbleWidth = 110.dp
+    val bubbleHeight = 100.dp
+    val density = LocalDensity.current
+    val lensSizePx = with(density) { Size(bubbleWidth.toPx(), bubbleHeight.toPx()) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(110.dp)
+            // 玻璃背景效果
+            .vibrancy(saturation = 1.6f, contrast = 1.1f)
+            // 触摸识别：按下时显示，移动时更新坐标
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.first()
+
+                        if (change.pressed) {
+                            isPressed = true
+                            touchOffset = change.position
+                        } else {
+                            isPressed = false
+                        }
+                    }
+                }
+            }
+            // 应用液态玻璃效果：现在它会放大底部的图标并染上一层淡蓝色
+            .liquidGlassEffect(
+                amount = animatedAmount,
+                lensSize = lensSizePx,
+                lensCenter = animatedOffset,
+                // 让它非常圆润
+                cornerRadii = floatArrayOf(100f, 100f, 100f, 100f)
+            )
+            .background(
+                Color.White.copy(alpha = 0.2f),
+                RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+            )
+            .border(
+                BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+            )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = 28.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             NavIcon(Icons.Default.Home, "主页", current == "home") { onSel("home") }
             NavIcon(Icons.AutoMirrored.Filled.List, "方案", current == "scheme") { onSel("scheme") }
             NavIcon(Icons.Default.Info, "关于", current == "about") { onSel("about") }
@@ -518,7 +584,28 @@ fun BottomNavigationBar(current: String, onSel: (String) -> Unit) {
 
 @Composable
 fun NavIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, sel: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(icon, label, tint = if (sel) Color(0xFF1E88E5) else Color.Gray, modifier = Modifier.size(28.dp)); Text(label, fontSize = 10.sp, color = if (sel) Color(0xFF1E88E5) else Color.Gray) } }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                icon, 
+                contentDescription = label, 
+                tint = if (sel) Color(0xFF1E88E5) else Color.Gray.copy(alpha = 0.8f), 
+                modifier = Modifier.size(26.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = label, 
+                fontSize = 12.sp,
+                color = if (sel) Color(0xFF1E88E5) else Color.Gray.copy(alpha = 0.9f)
+            )
+        }
+    }
 }
 
 fun readTextFromUri(context: Context, uri: Uri): String {

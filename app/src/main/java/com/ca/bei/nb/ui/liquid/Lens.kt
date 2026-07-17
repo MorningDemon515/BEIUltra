@@ -3,13 +3,22 @@ package com.ca.bei.nb.ui.liquid
 import android.graphics.RenderEffect
 import android.graphics.RuntimeShader
 import android.os.Build
+import androidx.compose.animation.core.withInfiniteAnimationFrameMillis
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 
 /**
- * 液态玻璃着色器封装
- * 适配自 Kyant0/AndroidLiquidGlass
+ * 极致液态玻璃着色器
+ * 模拟装有蓝色水的放大气泡效果
  */
 
 object LiquidGlassShader {
@@ -38,88 +47,61 @@ object LiquidGlassShader {
     """
 
     const val COMMON_UNIFORMS = """
-        uniform float2 size;
-        uniform float2 offset;
+        uniform float2 lensSize;
+        uniform float2 lensCenter;
         uniform float4 cornerRadii;
         uniform float refractionHeight;
         uniform float refractionAmount;
         uniform float depthEffect;
+        uniform float time;
         uniform shader content;
-    """
-
-    const val CIRCLE_MAP = """
-        float circleMap(float x) {
-            float v = 1.0 - x;
-            return sqrt(1.0 - v * v);
-        }
     """
 
     val REFRACTION_SHADER = """
         $COMMON_UNIFORMS
         $ROUNDED_RECT_SDF
-        $CIRCLE_MAP
 
         half4 main(float2 coord) {
-            float2 halfSize = size * 0.5;
-            float2 centeredCoord = (coord + offset) - halfSize;
-            float sd = sdRoundedRect(centeredCoord, halfSize, cornerRadii);
+            float2 halfLensSize = lensSize * 0.5;
+            float2 centeredCoord = coord - lensCenter;
+            float sd = sdRoundedRect(centeredCoord, halfLensSize, cornerRadii);
             
-            if (-sd >= refractionHeight) {
+            if (sd >= 2.0) { // 边缘留一点缓冲
                 return content.eval(coord);
             }
             
-            float d = circleMap(clamp(-sd / refractionHeight, 0.0, 1.0)) * refractionAmount;
-            float2 grad = gradSdRoundedRect(centeredCoord, halfSize, cornerRadii);
-            float2 depth = depthEffect * normalize(centeredCoord);
-            float2 refractedCoord = coord + d * normalize(grad + depth);
+            float amountScale = clamp(abs(refractionAmount) / 5.0, 0.0, 1.0);
             
-            return content.eval(refractedCoord);
-        }
-    """
-
-    val DISPERSION_SHADER = """
-        $COMMON_UNIFORMS
-        uniform float chromaticAberration;
-        $ROUNDED_RECT_SDF
-        $CIRCLE_MAP
-
-        half4 main(float2 coord) {
-            float2 halfSize = size * 0.5;
-            float2 centeredCoord = (coord + offset) - halfSize;
-            float sd = sdRoundedRect(centeredCoord, halfSize, cornerRadii);
+            // 1. 基础扭曲逻辑 (放大镜效果)
+            float dist = length(centeredCoord / halfLensSize);
+            float bulge = pow(1.0 - clamp(dist, 0.0, 1.0), 2.0);
             
-            if (-sd >= refractionHeight) {
-                return content.eval(coord);
-            }
-
-            float d = circleMap(clamp(-sd / refractionHeight, 0.0, 1.0)) * refractionAmount;
-            float2 grad = normalize(gradSdRoundedRect(centeredCoord, halfSize, cornerRadii) + depthEffect * normalize(centeredCoord));
+            // 2. 水波纹动态
+            float wave = sin(coord.x * 0.06 + time * 5.0) * cos(coord.y * 0.06 + time * 3.5) * 4.0 * amountScale;
             
-            float2 disp = d * grad * chromaticAberration;
+            // 计算折射后的坐标
+            float2 offset = centeredCoord * (bulge * 0.3 * amountScale);
+            float2 refractedCoord = coord - offset + wave * 0.5;
             
-            float2 rCoord = coord + d * grad + disp * 1.5;
-            float2 oCoord = coord + d * grad + disp * 1.0;
-            float2 yCoord = coord + d * grad + disp * 0.5;
-            float2 gCoord = coord + d * grad;
-            float2 cCoord = coord + d * grad - disp * 0.5;
-            float2 bCoord = coord + d * grad - disp * 1.0;
-            float2 vCoord = coord + d * grad - disp * 1.5;
-
-            half4 cR = content.eval(rCoord);
-            half4 cO = content.eval(oCoord);
-            half4 cY = content.eval(yCoord);
-            half4 cG = content.eval(gCoord);
-            half4 cC = content.eval(cCoord);
-            half4 cB = content.eval(bCoord);
-            half4 cV = content.eval(vCoord);
-
-            half4 finalColor;
-            finalColor.r = (cR.r * 0.15 + cO.r * 0.2 + cY.r * 0.2 + cG.r * 0.45);
-            finalColor.g = (cY.g * 0.15 + cG.g * 0.5 + cC.g * 0.2 + cB.g * 0.15);
-            finalColor.b = (cC.b * 0.15 + cB.b * 0.5 + cV.b * 0.35);
-            finalColor.a = cG.a;
-
-            return finalColor;
+            half4 baseColor = content.eval(refractedCoord);
+            
+            // 3. 水色填充 (淡淡的蓝色洗礼)
+            float waterTint = (1.0 - bulge) * 0.2 + 0.1;
+            baseColor.rgb = mix(baseColor.rgb, float3(0.1, 0.4, 0.9), waterTint * amountScale);
+            
+            // 4. 气泡高光与光泽
+            // 顶部斜侧高光
+            float2 lightDir = normalize(float2(-1.0, -1.0));
+            float spec = pow(max(0.0, dot(normalize(centeredCoord + 0.001), lightDir)), 8.0);
+            baseColor.rgb += float3(0.8, 0.9, 1.0) * spec * amountScale;
+            
+            // 边缘发光
+            float rim = 1.0 - smoothstep(-10.0, 0.0, sd);
+            baseColor.rgb += float3(0.5, 0.7, 1.0) * rim * 0.4 * amountScale;
+            
+            // 5. 简单的边缘遮罩 (抗锯齿)
+            float alpha = 1.0 - smoothstep(0.0, 2.0, sd);
+            return baseColor * alpha + content.eval(coord) * (1.0 - alpha);
         }
     """
 }
@@ -132,27 +114,40 @@ fun Modifier.liquidGlassEffect(
     height: Float = 40f,
     chromaticAberration: Float = 0.5f,
     depthEffect: Float = 0.2f,
-    cornerRadii: FloatArray = floatArrayOf(40f, 40f, 40f, 40f)
-): Modifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-    this.graphicsLayer {
-        val shader = if (chromaticAberration > 0) {
-            RuntimeShader(LiquidGlassShader.DISPERSION_SHADER)
-        } else {
-            RuntimeShader(LiquidGlassShader.REFRACTION_SHADER)
+    cornerRadii: FloatArray = floatArrayOf(40f, 40f, 40f, 40f),
+    lensSize: Size = Size.Zero,
+    lensCenter: Offset = Offset.Zero
+): Modifier = composed {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        var time by remember { mutableStateOf(0f) }
+        LaunchedEffect(Unit) {
+            while (true) {
+                withInfiniteAnimationFrameMillis {
+                    time = it / 1000f
+                }
+            }
         }
 
-        shader.setFloatUniform("size", size.width, size.height)
-        shader.setFloatUniform("offset", 0f, 0f)
-        shader.setFloatUniform("cornerRadii", cornerRadii[0], cornerRadii[1], cornerRadii[2], cornerRadii[3])
-        shader.setFloatUniform("refractionHeight", height)
-        shader.setFloatUniform("refractionAmount", -amount)
-        shader.setFloatUniform("depthEffect", depthEffect)
-        if (chromaticAberration > 0) {
-            shader.setFloatUniform("chromaticAberration", chromaticAberration)
-        }
+        this.graphicsLayer {
+            if (amount <= 0.1f) {
+                renderEffect = null
+                return@graphicsLayer
+            }
 
-        renderEffect = RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
+            val shader = RuntimeShader(LiquidGlassShader.REFRACTION_SHADER)
+            val finalLensSize = if (lensSize == Size.Zero) size else lensSize
+            
+            shader.setFloatUniform("lensSize", finalLensSize.width, finalLensSize.height)
+            shader.setFloatUniform("lensCenter", lensCenter.x, lensCenter.y)
+            shader.setFloatUniform("cornerRadii", cornerRadii[0], cornerRadii[1], cornerRadii[2], cornerRadii[3])
+            shader.setFloatUniform("refractionHeight", height)
+            shader.setFloatUniform("refractionAmount", -amount)
+            shader.setFloatUniform("depthEffect", depthEffect)
+            shader.setFloatUniform("time", time)
+
+            renderEffect = RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
+        }
+    } else {
+        this
     }
-} else {
-    this // 低版本系统回退，不显示特效但保证程序运行
 }
