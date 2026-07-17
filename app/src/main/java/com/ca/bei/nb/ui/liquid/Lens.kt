@@ -17,32 +17,18 @@ import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 
 /**
- * 极致液态玻璃着色器
- * 模拟装有蓝色水的放大气泡效果
+ * 终极液态玻璃 - 完美复刻参考图效果
+ * 具有强力放大、深蓝水色填充和高亮边缘
  */
 
 object LiquidGlassShader {
 
     const val ROUNDED_RECT_SDF = """
-        float radiusAt(float2 coord, float4 radii) {
-            if (coord.x < 0.0 && coord.y < 0.0) return radii.x;
-            if (coord.x > 0.0 && coord.y < 0.0) return radii.y;
-            if (coord.x > 0.0 && coord.y > 0.0) return radii.z;
-            return radii.w;
-        }
-
         float sdRoundedRect(float2 coord, float2 size, float4 radii) {
-            float r = radiusAt(coord, radii);
+            float2 radii2 = (coord.x > 0.0) ? ((coord.y > 0.0) ? radii.zy : radii.wx) : ((coord.y > 0.0) ? radii.xw : radii.yz);
+            float r = radii2.x;
             float2 q = abs(coord) - size + r;
             return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
-        }
-
-        float2 gradSdRoundedRect(float2 coord, float2 size, float4 radii) {
-            float2 e = float2(1.0, -1.0) * 0.5;
-            return normalize(e.xy * sdRoundedRect(coord + e.xy, size, radii) +
-                             e.yy * sdRoundedRect(coord + e.yy, size, radii) +
-                             e.yx * sdRoundedRect(coord + e.yx, size, radii) +
-                             e.xx * sdRoundedRect(coord + e.xx, size, radii));
         }
     """
 
@@ -50,10 +36,8 @@ object LiquidGlassShader {
         uniform float2 lensSize;
         uniform float2 lensCenter;
         uniform float4 cornerRadii;
-        uniform float refractionHeight;
-        uniform float refractionAmount;
-        uniform float depthEffect;
         uniform float time;
+        uniform float amount;
         uniform shader content;
     """
 
@@ -66,57 +50,58 @@ object LiquidGlassShader {
             float2 centeredCoord = coord - lensCenter;
             float sd = sdRoundedRect(centeredCoord, halfLensSize, cornerRadii);
             
-            if (sd >= 2.0) { // 边缘留一点缓冲
+            // 如果在气泡外，直接渲染原图
+            if (sd > 2.0) {
                 return content.eval(coord);
             }
             
-            float amountScale = clamp(abs(refractionAmount) / 5.0, 0.0, 1.0);
+            float normAmount = amount / 25.0; // 归一化强度
             
-            // 1. 基础扭曲逻辑 (放大镜效果)
+            // 1. 强力放大算法 (物理模拟凸透镜)
             float dist = length(centeredCoord / halfLensSize);
-            float bulge = pow(1.0 - clamp(dist, 0.0, 1.0), 2.0);
+            float mask = smoothstep(1.0, 0.0, dist);
             
-            // 2. 水波纹动态
-            float wave = sin(coord.x * 0.06 + time * 5.0) * cos(coord.y * 0.06 + time * 3.5) * 4.0 * amountScale;
+            // 通过坐标收缩实现放大：坐标离中心越近，取样点越向中心靠拢 = 看起来越像放大了
+            // 增加指数系数使其产生边缘向中心拉伸的效果
+            float magnification = 1.0 + 1.2 * normAmount * pow(mask, 1.5);
+            float2 refractedCoord = lensCenter + (centeredCoord / magnification);
             
-            // 计算折射后的坐标
-            float2 offset = centeredCoord * (bulge * 0.3 * amountScale);
-            float2 refractedCoord = coord - offset + wave * 0.5;
+            // 加入轻微的水波抖动
+            float wave = sin(coord.x * 0.05 + time * 4.0) * cos(coord.y * 0.05 + time * 3.0) * 3.0 * normAmount;
+            refractedCoord += wave;
+
+            half4 color = content.eval(refractedCoord);
             
-            half4 baseColor = content.eval(refractedCoord);
+            // 2. 深蓝色液体填充 (加强饱和度)
+            float tintStrength = mask * 0.35 * normAmount;
+            float3 waterBlue = float3(0.05, 0.35, 0.95);
+            color.rgb = mix(color.rgb, waterBlue, tintStrength);
             
-            // 3. 水色填充 (淡淡的蓝色洗礼)
-            float waterTint = (1.0 - bulge) * 0.2 + 0.1;
-            baseColor.rgb = mix(baseColor.rgb, float3(0.1, 0.4, 0.9), waterTint * amountScale);
+            // 3. 玻璃高光与亮边
+            // 顶部侧边高亮
+            float2 highlightPos = centeredCoord + halfLensSize * 0.4;
+            float highlight = smoothstep(0.4, 0.0, length(highlightPos / halfLensSize)) * 0.4 * normAmount;
+            color.rgb += float3(0.8, 0.9, 1.0) * highlight;
             
-            // 4. 气泡高光与光泽
-            // 顶部斜侧高光
-            float2 lightDir = normalize(float2(-1.0, -1.0));
-            float spec = pow(max(0.0, dot(normalize(centeredCoord + 0.001), lightDir)), 8.0);
-            baseColor.rgb += float3(0.8, 0.9, 1.0) * spec * amountScale;
+            // 外圈白色亮边 (轮廓线)
+            float edge = smoothstep(2.0, -2.0, abs(sd));
+            color.rgb = mix(color.rgb, float3(1.0, 1.0, 1.0), edge * 0.6 * normAmount);
             
-            // 边缘发光
-            float rim = 1.0 - smoothstep(-10.0, 0.0, sd);
-            baseColor.rgb += float3(0.5, 0.7, 1.0) * rim * 0.4 * amountScale;
-            
-            // 5. 简单的边缘遮罩 (抗锯齿)
+            // 4. 抗锯齿遮罩
             float alpha = 1.0 - smoothstep(0.0, 2.0, sd);
-            return baseColor * alpha + content.eval(coord) * (1.0 - alpha);
+            return mix(content.eval(coord), color, alpha);
         }
     """
 }
 
 /**
- * 核心液态玻璃效果 Modifier
+ * 终极液态玻璃效果 Modifier
  */
 fun Modifier.liquidGlassEffect(
-    amount: Float = 20f,
-    height: Float = 40f,
-    chromaticAberration: Float = 0.5f,
-    depthEffect: Float = 0.2f,
-    cornerRadii: FloatArray = floatArrayOf(40f, 40f, 40f, 40f),
+    amount: Float = 0f,
     lensSize: Size = Size.Zero,
-    lensCenter: Offset = Offset.Zero
+    lensCenter: Offset = Offset.Zero,
+    cornerRadii: FloatArray = floatArrayOf(60f, 60f, 60f, 60f)
 ): Modifier = composed {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         var time by remember { mutableStateOf(0f) }
@@ -140,10 +125,8 @@ fun Modifier.liquidGlassEffect(
             shader.setFloatUniform("lensSize", finalLensSize.width, finalLensSize.height)
             shader.setFloatUniform("lensCenter", lensCenter.x, lensCenter.y)
             shader.setFloatUniform("cornerRadii", cornerRadii[0], cornerRadii[1], cornerRadii[2], cornerRadii[3])
-            shader.setFloatUniform("refractionHeight", height)
-            shader.setFloatUniform("refractionAmount", -amount)
-            shader.setFloatUniform("depthEffect", depthEffect)
             shader.setFloatUniform("time", time)
+            shader.setFloatUniform("amount", amount)
 
             renderEffect = RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
         }

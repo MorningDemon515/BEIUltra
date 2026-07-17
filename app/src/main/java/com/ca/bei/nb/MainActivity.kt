@@ -506,26 +506,26 @@ fun BottomNavigationBar(current: String, onSel: (String) -> Unit) {
     var touchOffset by remember { mutableStateOf(Offset.Zero) }
     var isPressed by remember { mutableStateOf(false) }
 
-    // 1. 更加柔和的追踪动画（Spring 阻尼感）
+    // 1. 更加丝滑的弹性追踪 (降低 Stiffness 让它有一点“粘手”的惯性)
     val animatedOffset by animateOffsetAsState(
         targetValue = touchOffset,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy, // 增加一点弹性
+            dampingRatio = 0.65f, // 适中的弹性
             stiffness = Spring.StiffnessLow
         ),
         label = "bubble_offset"
     )
 
-    // 2. 气泡强度的平滑过渡
+    // 2. 强力放大倍率：将目标强度提升到 28f 以上
     val animatedAmount by animateFloatAsState(
-        targetValue = if (isPressed) 25f else 0f,
+        targetValue = if (isPressed) 28f else 0f,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "bubble_amount"
     )
 
-    // 3. 气泡尺寸定义（推荐 110x110 圆形或略扁的椭圆）
-    val bubbleWidth = 110.dp
-    val bubbleHeight = 100.dp
+    // 3. 调整为更宽、更扁平的“胶囊”形状，匹配参考图
+    val bubbleWidth = 150.dp   // 增加宽度
+    val bubbleHeight = 95.dp   // 略微降低高度
     val density = LocalDensity.current
     val lensSizePx = with(density) { Size(bubbleWidth.toPx(), bubbleHeight.toPx()) }
 
@@ -533,9 +533,7 @@ fun BottomNavigationBar(current: String, onSel: (String) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .height(110.dp)
-            // 玻璃背景效果
             .vibrancy(saturation = 1.6f, contrast = 1.1f)
-            // 触摸识别：按下时显示，移动时更新坐标
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -551,20 +549,20 @@ fun BottomNavigationBar(current: String, onSel: (String) -> Unit) {
                     }
                 }
             }
-            // 应用液态玻璃效果：现在它会放大底部的图标并染上一层淡蓝色
+            // 应用“终极版”液态效果：强放大、深蓝填充、白色亮边
             .liquidGlassEffect(
                 amount = animatedAmount,
                 lensSize = lensSizePx,
                 lensCenter = animatedOffset,
-                // 让它非常圆润
-                cornerRadii = floatArrayOf(100f, 100f, 100f, 100f)
+                // 两端半圆效果
+                cornerRadii = floatArrayOf(120f, 120f, 120f, 120f)
             )
             .background(
-                Color.White.copy(alpha = 0.2f),
+                Color.White.copy(alpha = 0.22f),
                 RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
             )
             .border(
-                BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
                 RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
             )
     ) {
