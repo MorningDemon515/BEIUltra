@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import com.ca.bei.nb.ui.liquid.liquidGlassEffect
+import com.ca.bei.nb.ui.liquid.vibrancy
 import com.ca.bei.nb.ui.theme.BEIUltraTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -207,6 +209,28 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+fun GlassBox(
+    modifier: Modifier = Modifier,
+    cornerRadius: Float = 20f,
+    content: @Composable BoxScope.() -> Unit
+) {
+    Box(
+        modifier = modifier
+            .vibrancy(saturation = 1.6f, contrast = 1.1f)
+            .liquidGlassEffect(
+                amount = 25f,
+                height = 50f,
+                chromaticAberration = 0.6f,
+                cornerRadii = floatArrayOf(cornerRadius, cornerRadius, cornerRadius, cornerRadius)
+            )
+            .background(Color.White.copy(alpha = 0.25f), RoundedCornerShape(cornerRadius.dp))
+            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)), RoundedCornerShape(cornerRadius.dp)),
+        contentAlignment = Alignment.Center,
+        content = content
+    )
+}
+
+@Composable
 fun HomeScreen(isDriverInstalled: Boolean, hasRoot: Boolean, activeScheme: Scheme?, onDriverRun: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -225,28 +249,19 @@ fun HomeScreen(isDriverInstalled: Boolean, hasRoot: Boolean, activeScheme: Schem
 
         Row(modifier = Modifier.fillMaxWidth().offset(y = screenHeight * 0.08f)) {
             // 状态卡片使用液态玻璃效果
-            Box(modifier = Modifier.size(screenWidth / 2 - 10.dp, screenHeight * 0.25f)
-                .background(Color.White.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
-                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)), RoundedCornerShape(20.dp)),
-                contentAlignment = Alignment.Center){
+            GlassBox(modifier = Modifier.size(screenWidth / 2 - 10.dp, screenHeight * 0.25f)) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(if (hasRoot) "工作中<ROOT>" else "工作中<NORMAL>", color = if (hasRoot) Color(0xFF2E7D32) else Color(0xFF455A64), fontSize = 18.sp)
-                    Text("版本: $version", color = Color.Gray)
+                    Text(if (hasRoot) "工作中<ROOT>" else "工作中<NORMAL>", color = if (hasRoot) Color(0xFF1B5E20) else Color(0xFF37474F), fontSize = 18.sp)
+                    Text("版本: $version", color = Color.DarkGray)
                 }
             }
             Spacer(modifier = Modifier.width(10.dp))
             Column {
-                Box(modifier = Modifier.size(screenWidth / 2 - 10.dp, screenHeight * 0.25f * 0.5f - 5.dp)
-                    .background(Color.White.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
-                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)), RoundedCornerShape(20.dp)),
-                    contentAlignment = Alignment.Center){
+                GlassBox(modifier = Modifier.size(screenWidth / 2 - 10.dp, screenHeight * 0.25f * 0.5f - 5.dp)) {
                     Text(if (isDriverInstalled) "驱动: 已就绪" else "驱动: 未安装", color = if (isDriverInstalled) Color(0xFF2E7D32) else Color(0xFFD32F2F))
                 }
                 Spacer(modifier = Modifier.height(10.dp))
-                Box(modifier = Modifier.size(screenWidth / 2 - 10.dp, screenHeight * 0.25f * 0.5f - 5.dp)
-                    .background(Color.White.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
-                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)), RoundedCornerShape(20.dp)),
-                    contentAlignment = Alignment.Center){
+                GlassBox(modifier = Modifier.size(screenWidth / 2 - 10.dp, screenHeight * 0.25f * 0.5f - 5.dp)) {
                     Text(activeScheme?.name ?: "未选方案", color = Color(0xFF1565C0), maxLines = 1)
                 }
             }
@@ -345,8 +360,10 @@ fun HomeScreen(isDriverInstalled: Boolean, hasRoot: Boolean, activeScheme: Schem
 
         // 玻璃质感日志区
         Box(modifier = Modifier.offset(y = screenHeight * 0.46f).fillMaxWidth().height(screenHeight * 0.35f)
-            .background(Color.White.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
-            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)), RoundedCornerShape(20.dp))
+            .vibrancy()
+            .liquidGlassEffect(amount = 15f, height = 30f, chromaticAberration = 0.3f)
+            .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)), RoundedCornerShape(20.dp))
             .padding(12.dp)) {
             LazyColumn(modifier = Modifier.fillMaxSize()) { item { Text(text = logText, color = Color(0xFF37474F), fontSize = 14.sp) } }
         }
@@ -383,15 +400,16 @@ fun SchemeScreen(schemes: List<Scheme>, activeSchemeId: String?, onActivate: (St
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(schemes) { scheme ->
                     val isActive = scheme.id == activeSchemeId
-                    Card(modifier = Modifier.fillMaxWidth(), 
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = if (isActive) Color.White.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.5f)),
-                        border = if (isActive) BorderStroke(2.dp, Color(0xFF2196F3)) else BorderStroke(1.dp, Color.White.copy(alpha = 0.5f))
+                    Box(modifier = Modifier.fillMaxWidth()
+                        .vibrancy(saturation = if(isActive) 1.8f else 1.2f)
+                        .liquidGlassEffect(amount = if(isActive) 25f else 10f)
+                        .background(if (isActive) Color.White.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                        .border(if (isActive) BorderStroke(2.dp, Color(0xFF2196F3)) else BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)), RoundedCornerShape(16.dp))
                     ) {
                         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(scheme.name, color = Color.Black, fontSize = 20.sp)
-                                Text("应用: ${scheme.gameName}", color = Color.Gray, fontSize = 12.sp)
+                                Text("应用: ${scheme.gameName}", color = Color.DarkGray, fontSize = 12.sp)
                             }
                             IconButton(onClick = { editTarget = scheme; showEdit = true }) { Icon(Icons.Default.Edit, "编辑", tint = Color.DarkGray) }
                             IconButton(onClick = { onDeleteScheme(scheme.id) }) { Icon(Icons.Default.Delete, "删除", tint = Color(0xFFC62828)) }
@@ -465,13 +483,23 @@ fun AboutScreen() {
     val v = remember { try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "1.0" } catch (ignored: Exception) { "1.0" } }
     Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(modifier = Modifier.height(40.dp))
-        Box(modifier = Modifier.size(120.dp).background(Color.White.copy(alpha = 0.5f), RoundedCornerShape(30.dp)).border(BorderStroke(1.dp, Color.White), RoundedCornerShape(30.dp)).clip(RoundedCornerShape(30.dp))) { 
+        Box(modifier = Modifier.size(120.dp)
+            .vibrancy()
+            .liquidGlassEffect()
+            .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(30.dp))
+            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)), RoundedCornerShape(30.dp))
+            .clip(RoundedCornerShape(30.dp))) { 
             AndroidView(factory = { c -> ImageView(c).apply { setImageDrawable(c.packageManager.getApplicationIcon(c.packageName)) } }, modifier = Modifier.fillMaxSize()) 
         }
         Spacer(modifier = Modifier.height(10.dp))
         Text(text = "BEI Ultra", style = MaterialTheme.typography.headlineMedium, color = Color(0xFF1A237E)); Text(text = "版本 $v", color = Color.Gray)
         Spacer(modifier = Modifier.height(40.dp))
-        Box(modifier = Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.5f), RoundedCornerShape(20.dp)).border(BorderStroke(1.dp, Color.White), RoundedCornerShape(20.dp)).padding(20.dp)) { 
+        Box(modifier = Modifier.fillMaxWidth()
+            .vibrancy()
+            .liquidGlassEffect()
+            .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)), RoundedCornerShape(20.dp))
+            .padding(20.dp)) {
             Text(text = "BEI Ultra 由 BEI Team 开发。\n专为极客设计的自动化工具。\n反馈地址: shandian145108@qq.com", fontSize = 14.sp, color = Color.DarkGray) 
         }
     }

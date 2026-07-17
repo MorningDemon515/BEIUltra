@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BEI-Ultra"
+rootProject.name = "BEI Ultra"
 include(":app")
