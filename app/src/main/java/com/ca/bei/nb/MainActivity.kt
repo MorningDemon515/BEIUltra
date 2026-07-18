@@ -13,6 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.animation.core.spring
@@ -506,40 +507,45 @@ fun BottomNavigationBar(current: String, onSel: (String) -> Unit) {
     var touchOffset by remember { mutableStateOf(Offset.Zero) }
     var isPressed by remember { mutableStateOf(false) }
 
-    // 1. 更加丝滑的弹性追踪 (降低 Stiffness 让它有一点“粘手”的惯性)
+    // 1. 位置追踪动画
     val animatedOffset by animateOffsetAsState(
         targetValue = touchOffset,
-        animationSpec = spring(
-            dampingRatio = 0.65f, // 适中的弹性
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "bubble_offset"
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessLow),
+        label = "glass_offset"
     )
 
-    // 2. 强力放大倍率：将目标强度提升到 28f 以上
+    // 2. 强度动画 (控制折射)
     val animatedAmount by animateFloatAsState(
-        targetValue = if (isPressed) 28f else 0f,
+        targetValue = if (isPressed) 20f else 0f,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "bubble_amount"
+        label = "glass_amount"
     )
 
-    // 3. 调整为更宽、更扁平的“胶囊”形状，匹配参考图
-    val bubbleWidth = 150.dp   // 增加宽度
-    val bubbleHeight = 95.dp   // 略微降低高度
+    // 3. 尺寸缩放动画：按下变大(140x90)，松开变小(40x30)
+    val animatedWidth by animateDpAsState(
+        targetValue = if (isPressed) 140.dp else 40.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "glass_width"
+    )
+    val animatedHeight by animateDpAsState(
+        targetValue = if (isPressed) 90.dp else 30.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "glass_height"
+    )
+
     val density = LocalDensity.current
-    val lensSizePx = with(density) { Size(bubbleWidth.toPx(), bubbleHeight.toPx()) }
+    val lensSizePx = with(density) { Size(animatedWidth.toPx(), animatedHeight.toPx()) }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(110.dp)
-            .vibrancy(saturation = 1.6f, contrast = 1.1f)
+            .vibrancy(saturation = 1.4f, contrast = 1.05f)
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.first()
-
                         if (change.pressed) {
                             isPressed = true
                             touchOffset = change.position
@@ -549,27 +555,24 @@ fun BottomNavigationBar(current: String, onSel: (String) -> Unit) {
                     }
                 }
             }
-            // 应用“终极版”液态效果：强放大、深蓝填充、白色亮边
             .liquidGlassEffect(
                 amount = animatedAmount,
                 lensSize = lensSizePx,
                 lensCenter = animatedOffset,
-                // 两端半圆效果
-                cornerRadii = floatArrayOf(120f, 120f, 120f, 120f)
+                blurRadius = 30f, // 增加边缘模糊感
+                cornerRadii = floatArrayOf(40f, 40f, 40f, 40f) // 经典的圆角矩形
             )
             .background(
-                Color.White.copy(alpha = 0.22f),
+                Color.White.copy(alpha = 0.2f),
                 RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
             )
             .border(
-                BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
                 RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
             )
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 28.dp),
+            modifier = Modifier.fillMaxSize().padding(bottom = 28.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {

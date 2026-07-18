@@ -17,8 +17,8 @@ import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 
 /**
- * 终极液态玻璃 - 完美复刻参考图效果
- * 具有强力放大、深蓝水色填充和高亮边缘
+ * 极简柔边缘液态玻璃
+ * 纯透明，无高光，边缘模糊，支持动态缩放
  */
 
 object LiquidGlassShader {
@@ -38,6 +38,7 @@ object LiquidGlassShader {
         uniform float4 cornerRadii;
         uniform float time;
         uniform float amount;
+        uniform float blurRadius;
         uniform shader content;
     """
 
@@ -50,58 +51,45 @@ object LiquidGlassShader {
             float2 centeredCoord = coord - lensCenter;
             float sd = sdRoundedRect(centeredCoord, halfLensSize, cornerRadii);
             
-            // 如果在气泡外，直接渲染原图
-            if (sd > 2.0) {
+            // 边缘模糊：通过 smoothstep 实现从内到外的柔和透明度过渡
+            float alpha = 1.0 - smoothstep(-blurRadius, blurRadius, sd);
+            
+            if (alpha <= 0.0) {
                 return content.eval(coord);
             }
             
-            float normAmount = amount / 25.0; // 归一化强度
+            float normAmount = amount / 25.0; 
             
-            // 1. 强力放大算法 (物理模拟凸透镜)
-            float dist = length(centeredCoord / halfLensSize);
-            float mask = smoothstep(1.0, 0.0, dist);
+            // 1. 写实平缓水波 (低频叠加)
+            float w1 = sin(coord.x * 0.035 + time * 2.5) * 1.8;
+            float w2 = cos(coord.y * 0.03 + time * 2.0) * 1.8;
+            float totalWave = (w1 + w2) * normAmount * alpha;
             
-            // 通过坐标收缩实现放大：坐标离中心越近，取样点越向中心靠拢 = 看起来越像放大了
-            // 增加指数系数使其产生边缘向中心拉伸的效果
-            float magnification = 1.0 + 1.2 * normAmount * pow(mask, 1.5);
-            float2 refractedCoord = lensCenter + (centeredCoord / magnification);
+            // 2. 适度的放大倍率 (降低倍率，仅产生轻微凸起感)
+            float magnification = 1.0 + 0.45 * normAmount * alpha;
             
-            // 加入轻微的水波抖动
-            float wave = sin(coord.x * 0.05 + time * 4.0) * cos(coord.y * 0.05 + time * 3.0) * 3.0 * normAmount;
-            refractedCoord += wave;
-
+            float2 refractedCoord = lensCenter + (centeredCoord / magnification) + totalWave;
+            
+            // 3. 纯净透明质感
             half4 color = content.eval(refractedCoord);
             
-            // 2. 深蓝色液体填充 (加强饱和度)
-            float tintStrength = mask * 0.35 * normAmount;
-            float3 waterBlue = float3(0.05, 0.35, 0.95);
-            color.rgb = mix(color.rgb, waterBlue, tintStrength);
+            // 仅增加极微弱的明度提升 (0.02)，不添加任何颜色或高光
+            color.rgb += 0.02 * normAmount * alpha;
             
-            // 3. 玻璃高光与亮边
-            // 顶部侧边高亮
-            float2 highlightPos = centeredCoord + halfLensSize * 0.4;
-            float highlight = smoothstep(0.4, 0.0, length(highlightPos / halfLensSize)) * 0.4 * normAmount;
-            color.rgb += float3(0.8, 0.9, 1.0) * highlight;
-            
-            // 外圈白色亮边 (轮廓线)
-            float edge = smoothstep(2.0, -2.0, abs(sd));
-            color.rgb = mix(color.rgb, float3(1.0, 1.0, 1.0), edge * 0.6 * normAmount);
-            
-            // 4. 抗锯齿遮罩
-            float alpha = 1.0 - smoothstep(0.0, 2.0, sd);
             return mix(content.eval(coord), color, alpha);
         }
     """
 }
 
 /**
- * 终极液态玻璃效果 Modifier
+ * 极简液态玻璃效果 Modifier
  */
 fun Modifier.liquidGlassEffect(
     amount: Float = 0f,
     lensSize: Size = Size.Zero,
     lensCenter: Offset = Offset.Zero,
-    cornerRadii: FloatArray = floatArrayOf(60f, 60f, 60f, 60f)
+    blurRadius: Float = 20f,
+    cornerRadii: FloatArray = floatArrayOf(40f, 40f, 40f, 40f)
 ): Modifier = composed {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         var time by remember { mutableStateOf(0f) }
@@ -114,7 +102,7 @@ fun Modifier.liquidGlassEffect(
         }
 
         this.graphicsLayer {
-            if (amount <= 0.1f) {
+            if (amount <= 0.01f) {
                 renderEffect = null
                 return@graphicsLayer
             }
@@ -127,6 +115,7 @@ fun Modifier.liquidGlassEffect(
             shader.setFloatUniform("cornerRadii", cornerRadii[0], cornerRadii[1], cornerRadii[2], cornerRadii[3])
             shader.setFloatUniform("time", time)
             shader.setFloatUniform("amount", amount)
+            shader.setFloatUniform("blurRadius", blurRadius)
 
             renderEffect = RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
         }
