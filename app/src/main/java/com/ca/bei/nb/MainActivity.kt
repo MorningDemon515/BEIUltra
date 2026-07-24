@@ -114,19 +114,31 @@ data class Scheme(
 object AppLaunchTracker {
     private const val PREF_NAME = "app_launch_prefs_v12"
     private const val KEY_DRIVER_RUN_BOOT = "driver_run_boot_time"
+    private const val KEY_DRIVER_SCHEME_ID = "driver_scheme_id"
     private const val KEY_SCHEMES = "saved_schemes_data"
     private const val KEY_ACTIVE_SCHEME_ID = "active_id"
 
     private fun getBootTimestamp(): Long = System.currentTimeMillis() - SystemClock.elapsedRealtime()
 
-    fun isDriverRunThisBoot(context: Context): Boolean {
+    /**
+     * 检测驱动是否在本轮开机且针对当前方案已运行。
+     * 由于无法物理检测驱动加载，采用记录开机时间戳+方案ID的方式模拟检测。
+     */
+    fun isDriverRunThisBoot(context: Context, currentSchemeId: String?): Boolean {
+        if (currentSchemeId == null) return false
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        return abs(getBootTimestamp() - prefs.getLong(KEY_DRIVER_RUN_BOOT, 0L)) < 2000
+        val savedBootTime = prefs.getLong(KEY_DRIVER_RUN_BOOT, 0L)
+        val savedSchemeId = prefs.getString(KEY_DRIVER_SCHEME_ID, null)
+        // 允许3秒误差，判断是否为同一次开机，且方案ID一致
+        return abs(getBootTimestamp() - savedBootTime) < 3000 && savedSchemeId == currentSchemeId
     }
 
-    fun markDriverRun(context: Context) {
+    fun markDriverRun(context: Context, schemeId: String?) {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putLong(KEY_DRIVER_RUN_BOOT, getBootTimestamp()).apply()
+        prefs.edit()
+            .putLong(KEY_DRIVER_RUN_BOOT, getBootTimestamp())
+            .putString(KEY_DRIVER_SCHEME_ID, schemeId)
+            .apply()
     }
 
     fun saveAllData(context: Context, schemes: List<Scheme>, activeId: String?) {
@@ -176,12 +188,14 @@ class MainActivity : ComponentActivity() {
                     val (loaded, id) = AppLaunchTracker.loadAllData(context)
                     schemes.addAll(loaded)
                     activeSchemeId = id
-                    isDriverInstalled = AppLaunchTracker.isDriverRunThisBoot(context)
+                    // 初始化时根据存储的方案ID检测驱动状态
+                    isDriverInstalled = AppLaunchTracker.isDriverRunThisBoot(context, id)
                     withContext(Dispatchers.IO) { hasRoot = AppLaunchTracker.checkRootPermission() }
                 }
 
                 LaunchedEffect(activeSchemeId) {
-                    if (activeSchemeId != null) { isDriverInstalled = false }
+                    // 切换方案需重新刷驱动：只有当前方案与已刷入驱动的方案一致时才显示已就绪
+                    isDriverInstalled = AppLaunchTracker.isDriverRunThisBoot(context, activeSchemeId)
                 }
 
                 fun triggerSave() { AppLaunchTracker.saveAllData(context, schemes.toList(), activeSchemeId) }
@@ -201,7 +215,7 @@ class MainActivity : ComponentActivity() {
                         Box(modifier = Modifier.padding(innerPadding)) {
                             when (currentScreen) {
                                 "home" -> HomeScreen(isDriverInstalled, hasRoot, activeScheme) {
-                                    AppLaunchTracker.markDriverRun(context)
+                                    AppLaunchTracker.markDriverRun(context, activeScheme?.id)
                                     isDriverInstalled = true
                                 }
                                 "scheme" -> SchemeScreen(schemes, activeSchemeId, 
